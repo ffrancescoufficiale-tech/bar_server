@@ -2,12 +2,14 @@ const admin = require('firebase-admin');
 const express = require('express');
 const app = express();
 
-
-const serviceAccount = require('./serviceAccount.json');
-
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert({
+    projectId: process.env.PROJECT_ID,
+    clientEmail: process.env.CLIENT_EMAIL,
+    privateKey: process.env.PRIVATE_KEY.replace(/\\n/g, '\n'),
+  })
 });
+
 const db = admin.firestore();
 
 console.log('Server avviato, ascolto ordini...');
