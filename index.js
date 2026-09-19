@@ -1,13 +1,14 @@
 const admin = require('firebase-admin');
 const express = require('express');
+const cors = require('cors');
 const app = express();
 
+app.use(cors());
+
+const serviceAccount = require('./serviceAccount.json');
+
 admin.initializeApp({
-  credential: admin.credential.cert({
-    projectId: process.env.PROJECT_ID,
-    clientEmail: process.env.CLIENT_EMAIL,
-    privateKey: process.env.PRIVATE_KEY.replace(/\\n/g, '\n'),
-  })
+  credential: admin.credential.cert(serviceAccount)
 });
 
 const db = admin.firestore();
