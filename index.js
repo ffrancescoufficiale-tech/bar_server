@@ -59,8 +59,7 @@ function startFirestoreListener() {
 
   db.collection('ordini').onSnapshot((snapshot) => {
     // Gestione metadata per ignorare gli eventi iniziali se necessario
-    if (snapshot.metadata.hasPendingWrites) return;
-
+    
     snapshot.docChanges().forEach(async (change) => {
       // Intercettiamo 'modified' e 'added' per coprire anche i riavvii del server
       if (change.type === 'modified' || change.type === 'added') {
