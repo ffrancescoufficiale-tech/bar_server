@@ -17,7 +17,6 @@ app.use(express.json());
 const projectId = process.env.PROJECT_ID || 'nomescuola-bar-app';
 const clientEmail = process.env.CLIENT_EMAIL;
 
-// Pulisce le virgolette extra ed esegue l'escape dei caratteri \n della chiave
 let privateKey = process.env.PRIVATE_KEY;
 if (privateKey) {
   privateKey = privateKey.trim();
@@ -44,26 +43,35 @@ if (!clientEmail || !privateKey) {
     });
     console.log('✅ Firebase Admin SDK inizializzato con successo.');
     db = admin.firestore();
+
+    // Avvia il listener di Firestore solo se la connessione ha avuto successo
+    startFirestoreListener();
   } catch (error) {
     console.error('❌ Errore fatale durante l\'inizializzazione di Firebase Admin:', error.message);
   }
 }
 
-// 4. LISTENER IN TEMPO REALE SU FIRESTORE (Attivato solo se Firebase è pronto)
-if (db) {
+// 4. FUNZIONE LISTENER IN TEMPO REALE SU FIRESTORE
+function startFirestoreListener() {
+  if (!db) return;
+
   console.log('📡 Server in ascolto sulle modifiche degli ordini in tempo reale...');
 
   db.collection('ordini').onSnapshot((snapshot) => {
+    // Gestione metadata per ignorare gli eventi iniziali se necessario
+    if (snapshot.metadata.hasPendingWrites) return;
+
     snapshot.docChanges().forEach(async (change) => {
-      // Intercettiamo solo le modifiche agli ordini esistenti
-      if (change.type === 'modified') {
+      // Intercettiamo 'modified' e 'added' per coprire anche i riavvii del server
+      if (change.type === 'modified' || change.type === 'added') {
         const ordine = change.doc.data();
 
-        if (ordine.stato === 'pronto' && ordine.email) {
+        // Evita l'invio multiplo controllando se la notifica è già stata processata
+        if (ordine.stato === 'pronto' && ordine.email && !ordine.notificaInviata) {
           console.log(`🔔 Ordine pronto per: ${ordine.email}`);
 
           try {
-            // Recuperiamo il documento dell'utente usando la sua email come ID
+            // Recuperiamo il documento dell'utente
             const userDoc = await db.collection('users').doc(ordine.email).get();
             const fcmToken = userDoc.data()?.fcmToken;
 
@@ -78,13 +86,26 @@ if (db) {
                   notification: {
                     title: '🍔 Ordine Pronto!',
                     body: 'Il tuo ordine è pronto al ritiro al bar!',
-                    icon: '/logo.png'
+                    icon: '/icons/Icon-192.png',
+                    badge: '/icons/Icon-192.png',
+                    click_action: '/'
+                  },
+                  fcmOptions: {
+                    link: '/'
                   }
+                },
+                data: {
+                  click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                  stato: 'pronto'
                 }
               };
 
               await admin.messaging().send(message);
               console.log(`✅ Notifica inviata con successo a ${ordine.email}`);
+
+              // Segna l'ordine come notificato su Firestore per evitare invii doppi
+              await change.doc.ref.update({ notificaInviata: true });
+
             } else {
               console.log(`⚠️ Nessun fcmToken trovato nella collezione 'users' per ${ordine.email}`);
             }
@@ -97,11 +118,9 @@ if (db) {
   }, (error) => {
     console.error('❌ Errore nel listener di Firestore:', error.message);
   });
-} else {
-  console.warn('⚠️ Listener Firestore non avviato: credenziali Firebase mancanti o errate.');
 }
 
-// 5. ROTTA HEALTH CHECK PER CRON-JOB / MONITORING
+// 5. ROTTA HEALTH CHECK
 app.get('/', (req, res) => {
   if (db) {
     res.status(200).send('Server notifiche attivo e connesso a Firestore ✅');
